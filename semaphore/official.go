@@ -16,6 +16,8 @@ import (
 // Release 释放 n 个资源
 // TryAcquire 尝试请求 n 个资源，不会阻塞，返回 true 表示成功，返回 false 表示失败
 
+// 和 channel 相比，信号量可以一次请求/释放多个资源，而 channel 只能一次请求/释放一个资源
+
 // 如果需要动态修改信号量的容量，可以使用 https://github.com/marusama/semaphore 包
 
 func Demo() {

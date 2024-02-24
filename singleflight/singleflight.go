@@ -33,7 +33,7 @@ func Demo() {
 
 	time.Sleep(time.Millisecond * 500)
 	// 如果时间间隔过久等到第一个请求结束返回结果了第二个请求还没发起，
-	// 源码里的 waitGroup 早就被释放了，所以第二个请求会重新调用 fn 函数，不会共享结果
+	// 源码里的 waitgroup 早就被释放了，所以第二个请求会重新调用 fn 函数，不会共享结果
 	// time.Sleep(time.Second * 5)
 
 	go func() {

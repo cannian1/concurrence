@@ -1,5 +1,9 @@
 package main
 
+import (
+	"concurrence/conc"
+)
+
 func main() {
 	//cond.Demo()
 	//cond.Demo2()
@@ -13,4 +17,5 @@ func main() {
 	// channel.BetterGracefulExit()
 	//task_scheduling.MapReduceDemo()
 	// semaphore.Demo()
+	conc.ConcDemo()
 }

@@ -36,6 +36,7 @@ func TestParentValueCtx(t *testing.T) {
 	// 然后用类型断言之后赋值
 	// 这样上层也可以访问到变化后的 context 的 value
 	// 只有不得已父 context 不得不获取子 context 的值的时候才这么做
+	// 场景： https://v2ex.com/t/1012453
 	lv1Ctx := context.WithValue(ctx, "map", map[string]int{})
 	lv2Ctx := context.WithValue(lv1Ctx, "key3", "value3")
 	m := lv2Ctx.Value("map").(map[string]int)
@@ -148,8 +149,10 @@ func TestWithCause(t *testing.T) {
 
 func TestAfterFunc(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
+	fmt.Println("正在做一些事情...")
 	context.AfterFunc(ctx, func() {
-		fmt.Println("执行 context 结束后的回调函数...")
+		fmt.Println("执行 context 被取消后的回调函数...")
 	})
+	time.Sleep(2 * time.Second)
 	cancel()
 }

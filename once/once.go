@@ -34,7 +34,7 @@ func Demo() {
 
 	// OnceValue 返回函数的执行结果
 	f4 := sync.OnceValue(func() string {
-		return time.Now().String()
+		return time.Now().Format("2006-01-02 15:04:05.000")
 	})
 
 	r1 := f4()

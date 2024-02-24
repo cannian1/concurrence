@@ -59,6 +59,7 @@ func Demo2() {
 	// [深度解密 Go 语言之 sync.Pool]https://www.cnblogs.com/qcrao-2018/p/12736031.html
 
 	// go 1.13 之后，pool 使用无锁队列，内部有 pin() 方法把当前 goroutine 固定在当前 P 上,每个 P 只有一个活动的 g 运行，因此无需加锁
+	// (也不是完全无锁，是锁的粒度更小，只锁了一部分操作，而不是整个操作，比如在 P 的数量发生变化时，会调 pinSlow() 方法，这个方法会加锁)
 	runtime.GC()
 	runtime.GC()
 
