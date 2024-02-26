@@ -39,6 +39,7 @@ func useLock(cli *clientv3.Client) {
 		log.Fatal(err)
 	}
 	defer s1.Close()
+	// Locker 同步原语，返回 sync.Locker 接口
 	locker := concurrency.NewLocker(s1, *lockName)
 
 	// 请求锁

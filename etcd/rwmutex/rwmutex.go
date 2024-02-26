@@ -14,6 +14,13 @@ import (
 	recipe "go.etcd.io/etcd/client/v3/experimental/recipes"
 )
 
+// 当写锁被持有时，对读锁和写锁的请求都会被阻塞等待写锁的释放
+// 当读锁被持有时，对写锁的请求会被阻塞等待读锁的释放，对读锁的请求可以直接获得锁
+
+// 当读锁被持有时，如果有一个节点请求写锁，那么后续的读锁请求会被阻塞等待写锁的释放;
+// 如果此时再有对读锁的请求，那么这个请求会被阻塞，直到前面的写锁被释放
+// 这个阻塞行为与标准库 sync.RWMutex 的行为一致
+
 var (
 	addr     = flag.String("addr", "http://127.0.0.1:2379", "etcd addresses")
 	lockName = flag.String("name", "my-test-lock", "lock name")

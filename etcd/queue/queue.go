@@ -12,6 +12,9 @@ import (
 	recipe "go.etcd.io/etcd/client/v3/experimental/recipes"
 )
 
+// 分布式队列
+// 如果当前分布式队列中没有元素，那么 Dequeue 会阻塞直到队列中有元素
+
 var (
 	addr      = flag.String("addr", "http://127.0.0.1:2379", "etcd addresses")
 	queueName = flag.String("name", "my-test-queue", "queue name")

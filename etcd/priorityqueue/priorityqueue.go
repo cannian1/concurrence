@@ -13,6 +13,9 @@ import (
 	recipe "go.etcd.io/etcd/client/v3/experimental/recipes"
 )
 
+// 优先级队列
+// 带有优先级的队列，优先级越高的元素(数字小)越先出队
+
 var (
 	addr      = flag.String("addr", "http://127.0.0.1:2379", "etcd addresses")
 	queueName = flag.String("name", "my-test-queue", "queue name")
@@ -64,3 +67,17 @@ func main() {
 		}
 	}
 }
+
+// go run .
+// push a 100
+// push b 2
+// push c 1000
+
+// 另一个终端
+// go run .
+// pop
+// b
+// pop
+// a
+// pop
+// c
