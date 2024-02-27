@@ -13,6 +13,10 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
+// STM（Software Transactional Memory）是一种并发控制机制，它允许多个goroutine同时读写共享内存，而不会发生数据竞争
+// STM 通过事务的方式来读写共享内存，事务是原子的，要么全部成功，要么全部失败
+// 直接使用 Txn 比较麻烦，所以 etcd 在其之上封装了 STM，STM 提供了更简单的接口
+
 var (
 	addr = flag.String("addr", "http://127.0.0.1:2379", "etcd addresses")
 )
@@ -29,7 +33,7 @@ func main() {
 	}
 	defer cli.Close()
 
-	// 设置5个账户，每个账号都有100元，总共500元
+	// 设置 5 个账户，每个账号都有 100 元，总共 500 元
 	totalAccounts := 5
 	for i := 0; i < totalAccounts; i++ {
 		k := fmt.Sprintf("accts/%d", i)
@@ -38,7 +42,7 @@ func main() {
 		}
 	}
 
-	// STM的应用函数，主要的事务逻辑
+	// STM 的应用函数，主要的事务逻辑
 	exchange := func(stm concurrency.STM) error {
 		// 随机得到两个转账账号
 		from, to := rand.Intn(totalAccounts), rand.Intn(totalAccounts)
@@ -63,7 +67,7 @@ func main() {
 		return nil
 	}
 
-	// 启动10个goroutine进行转账操作
+	// 启动 10 个goroutine进行转账操作
 	var wg sync.WaitGroup
 	wg.Add(10)
 	for i := 0; i < 10; i++ {
@@ -78,7 +82,7 @@ func main() {
 	}
 	wg.Wait()
 
-	// 检查账号最后的数目
+	// 检查账号最后的钱数
 	sum := 0
 	accts, err := cli.Get(context.TODO(), "accts/", clientv3.WithPrefix()) // 得到所有账号
 	if err != nil {
