@@ -1,7 +1,7 @@
 package main
 
 import (
-	"concurrence/conc"
+	"concurrence/ants"
 )
 
 func main() {
@@ -17,5 +17,6 @@ func main() {
 	// channel.BetterGracefulExit()
 	//task_scheduling.MapReduceDemo()
 	// semaphore.Demo()
-	conc.ConcDemo()
+	//conc.ConcDemo()
+	ants.Demo()
 }

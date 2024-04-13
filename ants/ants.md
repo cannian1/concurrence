@@ -121,3 +121,249 @@ type workerQueue interface {
 	reset()
 }
 ```
+
+## 核心 API
+### Pool 构造方法
+
+```go
+// NewPool instantiates a Pool with customized options.
+func NewPool(size int, options ...Option) (*Pool, error) {
+	if size <= 0 {
+		size = -1
+	}
+
+    // 读取用户配置，做一些前置校验，默认值赋值等前处理动作
+	opts := loadOptions(options...)
+
+	if !opts.DisablePurge {
+		if expiry := opts.ExpiryDuration; expiry < 0 {
+			return nil, ErrInvalidPoolExpiry
+		} else if expiry == 0 {
+			opts.ExpiryDuration = DefaultCleanIntervalTime
+		}
+	}
+
+	if opts.Logger == nil {
+		opts.Logger = defaultLogger
+	}
+
+	p := &Pool{
+		capacity: int32(size),
+		lock:     syncx.NewSpinLock(),
+		options:  opts,
+	}
+    // 构造 goWorker 对象池 workerCache
+	p.workerCache.New = func() interface{} {
+		return &goWorker{
+			pool: p,
+			task: make(chan func(), workerChanCap),
+		}
+	}
+    
+	// 初始化 goWorker 队列
+	if p.options.PreAlloc {
+		if size == -1 {
+			return nil, ErrInvalidPreAllocSize
+		}
+		p.workers = newWorkerQueue(queueTypeLoopQueue, size)
+	} else {
+		p.workers = newWorkerQueue(queueTypeStack, 0)
+	}
+
+	// Pool 并发协调器
+	p.cond = sync.NewCond(p.lock)
+
+	p.goPurge()
+	p.goTicktock()
+
+	return p, nil
+}
+```
+
+### Pool 提交任务
+
+```go
+// Submit submits a task to this pool.
+//
+// Note that you are allowed to call Pool.Submit() from the current Pool.Submit(),
+// but what calls for special attention is that you will get blocked with the last
+// Pool.Submit() call once the current Pool runs out of its capacity, and to avoid this,
+// you should instantiate a Pool with ants.WithNonblocking(true).
+func (p *Pool) Submit(task func()) error {
+	if p.IsClosed() {
+		return ErrPoolClosed
+	}
+
+	w, err := p.retrieveWorker()
+	if w != nil {
+		w.inputFunc(task)
+	}
+	return err
+}
+```
+
+- 从 Pool 中取出一个可用的 goWorker；
+- 将用户提交的任务包添加到 goWorker 的 channel 中.
+
+```go
+// retrieveWorker returns an available worker to run the tasks.
+func (p *Pool) retrieveWorker() (w worker, err error) {
+	p.lock.Lock()
+
+retry:
+	// 先尝试从队列中获取.
+	if w = p.workers.detach(); w != nil {
+		p.lock.Unlock()
+		return
+	}
+
+	// worker queue 为空，且没耗尽 worker goroutine 数量
+	// 接下来生成新的 goWorker.
+	if capacity := p.Cap(); capacity == -1 || capacity > p.Running() {
+		p.lock.Unlock()
+		w = p.workerCache.Get().(*goWorker)
+		w.run()
+		return
+	}
+
+	// Bail out early if it's in nonblocking mode or the number of pending callers reaches the maximum limit value.
+	if p.options.Nonblocking || (p.options.MaxBlockingTasks != 0 && p.Waiting() >= p.options.MaxBlockingTasks) {
+		p.lock.Unlock()
+		return nil, ErrPoolOverload
+	}
+
+	// Otherwise, we'll have to keep them blocked and wait for at least one worker to be put back into pool.
+	p.addWaiting(1)
+	p.cond.Wait() // block and wait for an available worker
+	p.addWaiting(-1)
+
+	if p.IsClosed() {
+		p.lock.Unlock()
+		return nil, ErrPoolClosed
+	}
+
+	goto retry
+}
+```
+
+
+
+### goWorker 运行
+
+```go
+// run starts a goroutine to repeat the process
+// that performs the function calls.
+func (w *goWorker) run() {
+	w.pool.addRunning(1)
+	go func() {
+		defer func() {
+			w.pool.addRunning(-1)
+            // 要回收之前先丢回收站
+			w.pool.workerCache.Put(w)
+			if p := recover(); p != nil {
+				if ph := w.pool.options.PanicHandler; ph != nil {
+					ph(p)
+				} else {
+					w.pool.options.Logger.Printf("worker exits from panic: %v\n%s\n", p, debug.Stack())
+				}
+			}
+			// Call Signal() here in case there are goroutines waiting for available workers.
+            // 回收一个 goWorker 就可以通知一个等待的 goWorke r执行
+			w.pool.cond.Signal()
+		}()
+
+        
+		for f := range w.task {
+            // task 函数为 nil 就回收
+			if f == nil {
+				return
+			}
+			f()
+            // 执行成功就放回协程池
+			if ok := w.pool.revertWorker(w); !ok {
+				return
+			}
+		}
+	}()
+}
+```
+
+### 回收 goWorkder
+
+```go
+// revertWorker puts a worker back into free pool, recycling the goroutines.
+func (p *Pool) revertWorker(worker *goWorker) bool {
+	if capacity := p.Cap(); (capacity > 0 && p.Running() > capacity) || p.IsClosed() {
+		p.cond.Broadcast()
+		return false
+	}
+
+	worker.lastUsed = p.nowTime()
+
+	p.lock.Lock()
+	// To avoid memory leaks, add a double check in the lock scope.
+	// Issue: https://github.com/panjf2000/ants/issues/113
+	if p.IsClosed() {
+		p.lock.Unlock()
+		return false
+	}
+	if err := p.workers.insert(worker); err != nil {
+		p.lock.Unlock()
+		return false
+	}
+	// Notify the invoker stuck in 'retrieveWorker()' of there is an available worker in the worker queue.
+	p.cond.Signal()
+	p.lock.Unlock()
+
+	return true
+}
+```
+
+### 定期销毁 goWorkder
+
+```go
+// purgeStaleWorkers clears stale workers periodically, it runs in an individual goroutine, as a scavenger.
+func (p *Pool) purgeStaleWorkers(ctx context.Context) {
+	ticker := time.NewTicker(p.options.ExpiryDuration)
+
+	defer func() {
+		ticker.Stop()
+		atomic.StoreInt32(&p.purgeDone, 1)
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		if p.IsClosed() {
+			break
+		}
+
+		var isDormant bool
+		p.lock.Lock()
+		staleWorkers := p.workers.refresh(p.options.ExpiryDuration)
+		n := p.Running()
+		isDormant = n == 0 || n == len(staleWorkers)
+		p.lock.Unlock()
+
+		// Notify obsolete workers to stop.
+		// This notification must be outside the p.lock, since w.task
+		// may be blocking and may consume a lot of time if many workers
+		// are located on non-local CPUs.
+		for i := range staleWorkers {
+			staleWorkers[i].finish()
+			staleWorkers[i] = nil
+		}
+
+		// There might be a situation where all workers have been cleaned up (no worker is running),
+		// while some invokers still are stuck in p.cond.Wait(), then we need to awake those invokers.
+		if isDormant && p.Waiting() > 0 {
+			p.cond.Broadcast()
+		}
+	}
+}
+```
+
