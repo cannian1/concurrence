@@ -3,10 +3,11 @@ package semaphore
 import (
 	"context"
 	"fmt"
-	"golang.org/x/exp/slog"
-	"golang.org/x/sync/semaphore"
 	"runtime"
 	"time"
+
+	"golang.org/x/exp/slog"
+	"golang.org/x/sync/semaphore"
 )
 
 // golang.org/x/sync/semaphore
@@ -20,7 +21,7 @@ import (
 
 // 如果需要动态修改信号量的容量，可以使用 https://github.com/marusama/semaphore 包
 
-func Demo() {
+func semaphoreDemo() {
 
 	var (
 		maxWorkers = runtime.GOMAXPROCS(0)                    // 最大并发数与 CPU 核心数相同
